@@ -12,117 +12,212 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-*/
 
-//////////////////////////////////////////////////////////////////////////////////
-//                                                                               //
-// This is the episode management code. It gathers all the episodic timing       //
-// information, returns that as a data structure, and can send it as a beacon    //
-// to a specified URL.                                                           //
-//                                                                               //
-// This code could come from one of three places:                                //
-//   1. implemented by the owner of the web page                                 //
-//   2. from the implementation of "episodes.js" shared across the industry      //
-//   3. in the future, this functionality would be built into the browser itself //
-//                                                                               //
-///////////////////////////////////////////////////////////////////////////////////
+See the source code here:
+     http://code.google.com/p/episodes/
+*/
 
 
 // Don't overwrite pre-existing instances of the object (esp. for older browsers).
 var EPISODES = EPISODES || {};
+EPISODES.q = EPISODES.q || [];
+EPISODES.targetOrigin = document.location.protocol + "//" + document.location.hostname;
+EPISODES.bPostMessage = ("undefined" != typeof(window.postMessage));
+
+
+// CUSTOMIZE THESE VARIABLES!!
+EPISODES.beaconUrl = EPISODES.beaconUrl || '/images/beacon.gif';
+EPISODES.autorun = ( "undefined" != typeof(EPISODES.autorun) ? EPISODES.autorun : true );
+
 
 EPISODES.init = function() {
-	EPISODES.done = false;
+	EPISODES.bDone = false;
     EPISODES.marks = {};
     EPISODES.measures = {};
-    EPISODES.starts = {};
-	EPISODES.addEventListener("message", EPISODES.handleEpisodeMessage, false);
+    EPISODES.starts = {};  // We need to save the starts so that given a measure we can say the epoch times that it began and ended.
 	EPISODES.findStartTime();
 	EPISODES.addEventListener("beforeunload", EPISODES.beforeUnload, false);
-	EPISODES.addEventListener("load", function() { window.postMessage("EPISODES:measure:onload:starttime", "http://stevesouders.com"); window.postMessage("EPISODES:mark:onload", "http://stevesouders.com"); }, false);
-}
+	EPISODES.addEventListener("load", EPISODES.onload, false); // TODO - this could happen AFTER the load event has already fired!!
 
-EPISODES.isCompatible = function() {
-	return ( "undefined" != typeof(window.postMessage) );
-}
+	// Process any commands that have been queued up while episodes.js loaded asynchronously.
+	EPISODES.processQ();
+};
 
-// Load the compatibility module if necessary. 
-// Do this AFTER we define EPISODES.init to avoid race conditions.
-if ( ! EPISODES.isCompatible() ) {
-	var scriptUrl = 'episodes-compat.js';
-	if ( -1 === window.navigator.userAgent.indexOf("MSIE") ) {
-		// NOT IE
-		var se = document.createElement('script');
-		se.src = scriptUrl;
-		document.getElementsByTagName('head')[0].appendChild(se); 
+
+// Process any commands in the queue.
+// The command queue is used to store calls to the API before the full script has been loaded.
+EPISODES.processQ = function() {
+	var len = EPISODES.q.length;
+	for ( var i = 0; i < len; i++ ) {
+		var aParams = EPISODES.q[i];
+		var cmd = aParams[0];
+		if ( "mark" === cmd ) {
+			EPISODES.mark(aParams[1], aParams[2]);
+		}
+		else if ( "measure" === cmd ) {
+			EPISODES.measure(aParams[1], aParams[2], aParams[3]);
+		}
+		else if ( "done" === cmd ) {
+			EPISODES.done(aParams[1]);
+		}
+	}
+};
+
+
+// Set a time marker (typically the beginning of an episode).
+EPISODES.mark = function(markName, markTime) {
+	EPISODES.dprint("EPISODES.mark: " + markName + ", " + markTime);
+
+	if ( ! markName) {
+		EPISODES.dprint("Error: markName is undefined in EPISODES.mark.");
+		return;
+	}
+
+	EPISODES.marks[markName] = parseInt(markTime || new Date().getTime());
+
+	if ( EPISODES.bPostMessage ) {
+		window.postMessage("EPISODES:mark:" + markName + ":" + markTime, EPISODES.targetOrigin);
+	}
+
+	// Special marks that we look for:
+	if ( "firstbyte" === markName ) {
+		EPISODES.measure("backend", "starttime", "firstbyte");
+	}
+	else if ( "onload" === markName ) {
+		EPISODES.measure("frontend", "firstbyte", "onload");
+		EPISODES.measure("page load time", "starttime", "onload");
+	}
+	else if ( "done" === markName ) {
+		EPISODES.measure("total load time", "starttime", "done");
+	}
+};
+
+
+// Measure an episode.
+EPISODES.measure = function(episodeName, startNameOrTime, endNameOrTime) {
+	EPISODES.dprint("EPISODES.measure: " + episodeName + ", " + startNameOrTime + ", " + endNameOrTime);
+
+	if ( ! episodeName) {
+		EPISODES.dprint("Error: episodeName is undefined in EPISODES.measure.");
+		return;
+	}
+
+	var startEpochTime;
+	if ( "undefined" === typeof(startNameOrTime) ) {
+		if ( "number" === typeof(EPISODES.marks[episodeName]) ) {
+			// If no startName is specified, then use the episodeName as the start mark.
+			startEpochTime = EPISODES.marks[episodeName];
+		}
+		else {
+			// Create a "measure" that is this exact point in time?
+			startEpochTime = new Date().getTime();
+		}
+	}
+	else if ( "number" === typeof(EPISODES.marks[startNameOrTime]) ) {
+		// If a mark with this name exists, use that.
+		startEpochTime = EPISODES.marks[startNameOrTime];
+	}
+	else if ( "number" === typeof(startNameOrTime) ) {
+		// Assume a specific epoch time is provided.
+		startEpochTime = startNameOrTime;
 	}
 	else {
-		// IE
-		document.write('<scr' + 'ipt src="' + scriptUrl + '"></scr' + 'ipt>');
+		EPISODES.dprint("Error: unexpected startNameOrTime in EPISODES.measure: " + startNameOrTime);
+		return;
 	}
-}
 
-// Parse an EPISODES message and perform the desired function.
-EPISODES.handleEpisodeMessage = function(event) {
-    var message = event.data;
-    var aParts = message.split(':');
-    if ( "EPISODES" === aParts[0] ) {
-		var action = aParts[1];
-		if ( "init" === action ) {
-			// "EPISODES:init"
-			EPISODES.init();
-		}
-		else if ( "mark" === action ) {
-			// "EPISODES:mark:markName[:markTime]"
-			var markName = aParts[2];
-			EPISODES.marks[markName] = aParts[3] || Number(new Date());
-		}
-		else if ( "measure" === action ) {
-			// "EPISODES:measure:episodeName[:startMarkName|startEpochTime[:endMarkName|endEpochTime]]"
-			var episodeName = aParts[2];
+	var endEpochTime;
+	if ( "undefined" === typeof(endNameOrTime) ) {
+		endEpochTime = new Date().getTime();
+	}
+	else if ( "number" === typeof(EPISODES.marks[endNameOrTime]) ) {
+		// If a mark with this name exists, use that.
+		endEpochTime = EPISODES.marks[endNameOrTime];
+	}
+	else if ( "number" === typeof(endNameOrTime) ) {
+		endEpochTime = endNameOrTime;
+	}
+	else {
+		EPISODES.dprint("Error: unexpected endNameOrTime in EPISODES.measure: " + endNameOrTime);
+		return;
+	}
 
-			// If no startMakeName is specified, assume it's the same as the episode name.
-			var startMakeName = ( "undefined" != typeof(aParts[3]) ? aParts[3] : episodeName );
-            // If the startMakeName doesn't exist, assume it's an actual time measurement.
-			var startEpochTime = ( "undefined" != typeof(EPISODES.marks[startMakeName]) ? EPISODES.marks[startMakeName] : 
-								   ( ("" + startMakeName) === parseInt(startMakeName) ? startMakeName : undefined ) );
+	EPISODES.starts[episodeName] = parseInt(startEpochTime);
+	EPISODES.measures[episodeName] = parseInt(endEpochTime - startEpochTime);
 
-			var endEpochTime = ( "undefined" === typeof(aParts[4]) ? Number(new Date()) : 
-								 ( "undefined" != typeof(EPISODES.marks[aParts[4]]) ? EPISODES.marks[aParts[4]] : aParts[4] ) );
+	if ( EPISODES.bPostMessage ) {
+		window.postMessage("EPISODES:measure:" + episodeName + ":" + startEpochTime + ":" + endEpochTime, EPISODES.targetOrigin);
+	}
+};
 
-            if ( startEpochTime ) {
-			    EPISODES.measures[episodeName] = parseInt(endEpochTime - startEpochTime);
-			    EPISODES.starts[episodeName] = parseInt(startEpochTime);
-            }
-		}
-		else if ( "done" === action ) {
-			// "EPISODES:done"
-			EPISODES.done = true;
-		}
-    }
-}
+
+// In the case of Ajax or post-onload episodes, call done to signal the end of episodes.
+EPISODES.done = function(callback) {
+	EPISODES.bDone = true;
+
+	EPISODES.mark("done");
+
+	if ( EPISODES.bPostMessage ) {
+		window.postMessage("EPISODES:done", EPISODES.targetOrigin);
+	}
+
+	if ( "function" === typeof(callback) ) {
+		callback();
+	}
+};
+
+
+// Return an object of mark names and their corresponding times.
+EPISODES.getMarks = function() {
+	return EPISODES.marks;
+};
+
 
 // Return an object of episode names and their corresponding durations.
 EPISODES.getMeasures = function() {
 	return EPISODES.measures;
-}
+};
 
-// Return an object of episode names and their corresponding durations.
+
+// Return an object of episode names and their corresponding start times.
+// This is needed so that we can determine the start and end time of a duration.
 EPISODES.getStarts = function() {
 	return EPISODES.starts;
-}
+};
+
+
 
 // Construct a querystring of episodic time measurements and send it to the specified URL.
-EPISODES.sendBeacon = function(url) {
+//    url      The URL to which to send the beacon request. 
+//             This is the full path including filename, but without querystring params.
+//             Example: "http://yourdomain.com/gen204"
+//             A best practice is to return a 204 "No Content" response.
+//             If not specified then EPISODES.beaconUrl is used.
+//
+//    params - An object of key|value pairs that are added to the URL's querystring.
+//             Example: { "pageType": "login", "dataCenter": "Wash DC" }
+//             That example would add this to the querystring: &pageType=login&dataCenter=Wash%20DC
+//
+EPISODES.sendBeacon = function(url, params) {
+	url = url || EPISODES.beaconUrl;
 	var measures = EPISODES.getMeasures();
 	var sTimes = "";
 	for ( var key in measures ) {
-		sTimes += "," + key + ":" + measures[key];
+		sTimes += "," + escape(key) + ":" + measures[key];
 	}
 
 	if ( sTimes ) {
 	    // strip the leading ","
 		sTimes = sTimes.substring(1);
+
+		// Add user's params
+		if ( params ) {
+			for (var key in params) {
+				if ( params.hasOwnProperty(key) ) {
+					sTimes += "&" + escape(key) + "=" + escape(params[key]);
+				}
+			}
+		}
 
 		img = new Image();
 		img.src = url + "?ets=" + sTimes;
@@ -130,10 +225,60 @@ EPISODES.sendBeacon = function(url) {
 	}
 
     return "";
-}
+};
+
 
 // Use various techniques to determine the time at which this page started.
 EPISODES.findStartTime = function() {
+	var startTime = EPISODES.findStartWebTiming() || EPISODES.findStartGToolbar() || EPISODES.findStartCookie();
+	if ( startTime ) {
+		EPISODES.mark("starttime", startTime);
+	}
+};
+
+
+// Find the start time from the Web Timing "performance" object.
+// http://test.w3.org/webperf/specs/NavigationTiming/
+// http://blog.chromium.org/2010/07/do-you-know-how-slow-your-web-page-is.html
+EPISODES.findStartWebTiming = function() {
+	var startTime = undefined;
+
+	var performance = window.performance || window.mozPerformance || window.msPerformance || window.webkitPerformance;
+ 
+	if ( "undefined" != typeof(performance) && "undefined" != typeof(performance.timing) && "undefined" != typeof(performance.timing["navigationStart"]) ) {
+		startTime = performance.timing["navigationStart"];
+		EPISODES.dprint("EPISODES.findStartWebTiming: startTime = " + startTime);
+	}
+
+	return startTime;
+};
+
+
+// Find the start time from the Google Toolbar.
+// http://ecmanaut.blogspot.com/2010/06/google-bom-feature-ms-since-pageload.html
+EPISODES.findStartGToolbar = function() {
+	var startTime = undefined;
+
+	if ( "undefined" != typeof(window.external) && "undefined" != typeof(window.external.pageT) ) {
+		startTime = (new Date().getTime()) - window.external.pageT;
+	}
+	else if ( "undefined" != typeof(window.gtbExternal) && "undefined" != typeof(window.gtbExternal.pageT) ) {
+		startTime = (new Date().getTime()) - window.gtbExternal.pageT();
+	}
+	else if ( "undefined" != typeof(window.chrome) && "undefined" != typeof(window.chrome.csi) ) {
+		startTime = (new Date().getTime()) - window.chrome.csi().pageT;
+	}
+
+	if ( startTime ) {
+		EPISODES.dprint("EPISODES.findStartGToolbar: startTime = " + startTime);
+	}
+	
+	return startTime;
+};
+
+
+// Find the start time based on a cookie set by Episodes in the unload handler.
+EPISODES.findStartCookie = function() {
 	var aCookies = document.cookie.split(' ');
 	for ( var i = 0; i < aCookies.length; i++ ) {
 		if ( 0 === aCookies[i].indexOf("EPISODES=") ) {
@@ -149,18 +294,113 @@ EPISODES.findStartTime = function() {
 				}
 			}
 			if ( bReferrerMatch && startTime ) {
-				window.postMessage("EPISODES:mark:starttime:" + startTime, "http://stevesouders.com");
+				EPISODES.dprint("EPISODES.findStartCookie: startTime = " + startTime);
+				return startTime;
 			}
 		}
 	}
-}
+
+	return undefined;
+};
+
+
 
 // Set a cookie when the page unloads. Consume this cookie on the next page to get a "start time".
+// Doesn't work in some browsers (Opera).
 EPISODES.beforeUnload = function(e) {
 	document.cookie = "EPISODES=s=" + Number(new Date()) + "&r=" + escape(document.location) + "; path=/";
+};
+
+
+// When the page is done do final wrap-up.
+EPISODES.onload = function(e) {
+	EPISODES.mark("onload");
+
+	if ( EPISODES.autorun ) {
+		EPISODES.sendBeacon();
+	}
+};
+
+
+// Helper function to draw a picture of the Episodes.
+// Sets the innerHTML of parent.
+EPISODES.drawEpisodes = function(parent, bMarks) {
+	if ( ! parent ) {
+		return;
+	}
+	if ( "undefined" === typeof(bMarks) ) {
+		bMarks = 1;
+	}
+
+	// Put the episodes (and marks) in order by start time and duration.
+	// Create an array that we'll sort with special function.
+	var starts = EPISODES.getStarts();
+	var measures = EPISODES.getMeasures();
+	var marks = EPISODES.getMarks();
+	var aEpisodes = new Array(); // each element is an array: [start, end, name]
+	for ( var episodeName in measures ) {
+		if ( measures.hasOwnProperty(episodeName) ) {
+			var start = starts[episodeName];
+			aEpisodes.push([ start, start + measures[episodeName], episodeName ]);
+		}
+	}
+	for ( var episodeName in marks ) {
+		if ( marks.hasOwnProperty(episodeName) ) {
+			if ( "undefined" === typeof(measures[episodeName]) ) {
+				// Only add the mark if it is NOT an episode.
+				var start = marks[episodeName];
+				aEpisodes.push([ start, start, episodeName ]);
+			}
+		}
+	}
+	aEpisodes.sort(EPISODES.sortEpisodes);
+
+	// Find start and end of all episodes.
+	var tFirst = aEpisodes[0][0];
+	var tLast = aEpisodes[0][1];
+	var len = aEpisodes.length;
+	for ( var i = 1; i < len; i++ ) {
+		if ( aEpisodes[i][1] > tLast ) {
+			tLast = aEpisodes[i][1];
+		}
+	}
+
+	// Create HTML to represent the episodes.
+	var nPixels = parent.clientWidth || parent.offsetWidth;
+	var PxlPerMs = nPixels / (tLast - tFirst);
+    var sHtml = "";
+	for ( var i = 0; i < aEpisodes.length; i++ ) {
+		var start = aEpisodes[i][0];
+		var end = aEpisodes[i][1];
+		var delta = end - start;
+		var episodeName = aEpisodes[i][2];
+		var leftPx = parseInt(PxlPerMs * (start - tFirst)) + 40;
+		var widthPx = parseInt(PxlPerMs * delta);
+		sHtml += '<div style="font-size: 10pt; position: absolute; left: ' + leftPx + 
+		    'px; top: ' + (i*30) + 'px; width: ' + widthPx + 'px; height: 16px;">' +
+            '<div style="background: #EEE; border: 1px solid; padding-bottom: 2px;"><nobr style="padding-left: 4px;">' + episodeName + 
+			( 0 < delta ? ' - ' + delta + 'ms' : '' ) +
+			'</nobr></div></div>\n';
+	}
+
+	parent.innerHTML = sHtml;
 }
 
-// Wrapper for FF's window.addEventListener and IE's window.attachEvent.
+
+EPISODES.sortEpisodes = function(a, b) {
+	if ( a[0] == b[0] ) {
+		return 0;
+	}
+	if ( a[0] < b[0] ) {
+		return -1;
+	}
+
+	return 1;
+};
+
+
+
+// Wrapper for addEventListener and attachEvent.
 EPISODES.addEventListener = function(sType, callback, bCapture) {
 	if ( "undefined" != typeof(window.attachEvent) ) {
 		return window.attachEvent("on" + sType, callback);
@@ -168,10 +408,16 @@ EPISODES.addEventListener = function(sType, callback, bCapture) {
 	else if ( window.addEventListener ){
 		return window.addEventListener(sType, callback, bCapture);
 	}
+};
+
+
+// Wrapper for debug log function.
+if ( "undefined" != typeof(console) && "undefined" != typeof(console.log) ) {
+	EPISODES.dprint = function(msg) { console.log(msg); };
+}
+else {
+	EPISODES.dprint = function(msg) { };
 }
 
-if ( EPISODES.isCompatible() ) {
-	// If this browser is NOT compatible, we call EPISODES.init at the bottom of episodes-compat.js.
-	EPISODES.init();
-}
 
+EPISODES.init();
