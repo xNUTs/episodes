@@ -157,6 +157,10 @@ EPISODES.done = function(callback) {
 
 	EPISODES.mark("done");
 
+	if ( EPISODES.autorun ) {
+		EPISODES.sendBeacon();
+	}
+
 	if ( EPISODES.bPostMessage ) {
 		window.postMessage("EPISODES:done", EPISODES.targetOrigin);
 	}
@@ -317,7 +321,7 @@ EPISODES.onload = function(e) {
 	EPISODES.mark("onload");
 
 	if ( EPISODES.autorun ) {
-		EPISODES.sendBeacon();
+		EPISODES.done();
 	}
 };
 
