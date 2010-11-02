@@ -7,18 +7,15 @@
 <script>
 var EPISODES = EPISODES || {};
 EPISODES.q = []; // command queue
-EPISODES.mark = function(markName, markTime) { EPISODES.q.push( ["mark", markName, markTime || new Date().getTime()] ); };
-EPISODES.measure = function(episodeName, startNameOrTime, endNameOrTime) { EPISODES.q.push( ["measure", episodeName, startNameOrTime, endNameOrTime || new Date().getTime()] ); };
+EPISODES.mark = function(mn, mt) { EPISODES.q.push( ["mark", mn, mt || new Date().getTime()] ); };
+EPISODES.measure = function(en, st, en) { EPISODES.q.push( ["measure", en, st, en || new Date().getTime()] ); };
 EPISODES.done = function(callback) { EPISODES.q.push( ["done", callback] ); };
+EPISODES.mark("firstbyte");
 (function() {
     var epjs = document.createElement("script"); epjs.type = "text/javascript"; epjs.async = true;
     epjs.src = "episodes.js";
     var s = document.getElementsByTagName("script")[0]; s.parentNode.insertBefore(epjs, s);
 })();
-</script>
-
-<script>
-EPISODES.mark("firstbyte");
 </script>
 
 <script src='http://ajax.googleapis.com/ajax/libs/jquery/1.2.6/jquery.min.js' onload='EPISODES.measure("jQuery done")'></script>
