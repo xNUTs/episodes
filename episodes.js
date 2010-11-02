@@ -21,9 +21,9 @@ See the source code here:
 // Don't overwrite pre-existing instances of the object (esp. for older browsers).
 var EPISODES = EPISODES || {};
 EPISODES.q = EPISODES.q || [];
+EPISODES.version = "0.2";
 EPISODES.targetOrigin = document.location.protocol + "//" + document.location.hostname;
 EPISODES.bPostMessage = ("undefined" != typeof(window.postMessage));
-
 
 // CUSTOMIZE THESE VARIABLES!!
 EPISODES.beaconUrl = EPISODES.beaconUrl || '/images/beacon.gif';
@@ -224,7 +224,7 @@ EPISODES.sendBeacon = function(url, params) {
 		}
 
 		img = new Image();
-		img.src = url + "?ets=" + sTimes;
+		img.src = url + "?ets=" + sTimes + "&v=" + EPISODES.version;
 	    return img.src;
 	}
 
