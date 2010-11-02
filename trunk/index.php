@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
 <head>
-<title>Episodes</title>
+<title>Web Episodes</title>
 <meta charset="UTF-8">
 
 <script>
@@ -39,7 +39,7 @@ BODY { font-family: arial; width: 900px; }
 
 <div style="float: right; font-size: 0.9em;">
 <nobr>
-<a href="http://groups.google.com/group/episodes/topics">contact us</a>
+<a href="http://groups.google.com/group/webepisodes/topics">contact us</a>
 &nbsp;|&nbsp;
 <a href="http://code.google.com/p/episodes/source/checkout">code</a>
 &nbsp;|&nbsp;
@@ -49,7 +49,7 @@ BODY { font-family: arial; width: 900px; }
 <h1>Web Episodes</h1>
 
 <p style="margin-bottom: 0;">
-<i>Episodes</i> is a framework for timing web pages.
+<i>Web Episodes</i> is a framework for timing web pages.
 It has three key concepts:
 <ul>
   <li> it supports measuring Web 2.0 applications
