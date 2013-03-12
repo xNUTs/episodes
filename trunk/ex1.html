@@ -21,7 +21,7 @@ EPISODES.mark("firstbyte");
 <script src='http://ajax.googleapis.com/ajax/libs/jquery/1.2.6/jquery.min.js' onload='EPISODES.measure("jQuery done")'></script>
 
 </head>
-<body onload="EPISODES.drawEpisodes(document.getElementById('episodesviz'))" style="font-family: Arial;">
+<body onload="setTimeout(function(){EPISODES.drawEpisodes(document.getElementById('episodesviz'))},10)" style="font-family: Arial;">
 <h1> Episodes Example 1</h1>
 
 <div>
