@@ -263,13 +263,13 @@ EPISODES.findStartWebTiming = function() {
 EPISODES.findStartGToolbar = function() {
 	var startTime = undefined;
 
-	if ( "undefined" != typeof(window.external) && "undefined" != typeof(window.external.pageT) ) {
+	if ( "object" === typeof(window.external) && "number" === typeof(window.external.pageT) ) {
 		startTime = (new Date().getTime()) - window.external.pageT;
 	}
-	else if ( "undefined" != typeof(window.gtbExternal) && "undefined" != typeof(window.gtbExternal.pageT) ) {
+	else if ( "object" === typeof(window.gtbExternal) && "function" === typeof(window.gtbExternal.pageT) ) {
 		startTime = (new Date().getTime()) - window.gtbExternal.pageT();
 	}
-	else if ( "undefined" != typeof(window.chrome) && "undefined" != typeof(window.chrome.csi) ) {
+	else if ( "object" === typeof(window.chrome) && "function" === typeof(window.chrome.csi) ) {
 		startTime = (new Date().getTime()) - window.chrome.csi().pageT;
 	}
 
