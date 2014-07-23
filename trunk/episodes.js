@@ -207,7 +207,7 @@ EPISODES.sendBeacon = function(url, params) {
 	var measures = EPISODES.getMeasures();
 	var sTimes = "";
 	for ( var key in measures ) {
-		sTimes += "," + escape(key) + ":" + measures[key];
+		sTimes += "," + encodeURI(key) + ":" + measures[key];
 	}
 
 	if ( sTimes ) {
@@ -218,7 +218,7 @@ EPISODES.sendBeacon = function(url, params) {
 		if ( params ) {
 			for (var key in params) {
 				if ( params.hasOwnProperty(key) ) {
-					sTimes += "&" + escape(key) + "=" + escape(params[key]);
+					sTimes += "&" + encodeURI(key) + "=" + encodeURI(params[key]);
 				}
 			}
 		}
@@ -294,7 +294,7 @@ EPISODES.findStartCookie = function() {
 				}
 				else if ( 0 === aSubCookies[j].indexOf("r=") ) {
 					var startPage = aSubCookies[j].substring(2);
-					bReferrerMatch = ( escape(document.referrer) == startPage );
+					bReferrerMatch = ( encodeURI(document.referrer) == startPage );
 				}
 			}
 			if ( bReferrerMatch && startTime ) {
@@ -312,7 +312,7 @@ EPISODES.findStartCookie = function() {
 // Set a cookie when the page unloads. Consume this cookie on the next page to get a "start time".
 // Doesn't work in some browsers (Opera).
 EPISODES.beforeUnload = function(e) {
-	document.cookie = "EPISODES=s=" + Number(new Date()) + "&r=" + escape(document.location) + "; path=/";
+	document.cookie = "EPISODES=s=" + Number(new Date()) + "&r=" + encodeURI(document.location) + "; path=/";
 };
 
 
