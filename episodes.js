@@ -15,29 +15,42 @@ See the source code here:
     https://github.com/stevesouders/episodes.git
 
 Embed this snippet in your page:
-<script>
-var EPISODES = EPISODES || {};
-EPISODES.q = [];                      // command queue
-EPISODES.mark = function(mn, mt) { EPISODES.q.push( ["mark", mn, mt || new Date().getTime()] ); };
-EPISODES.measure = function(en, st, en) { EPISODES.q.push( ["measure", en, st, en || new Date().getTime()] ); };
-EPISODES.done = function(callback) { EPISODES.q.push( ["done", callback] ); };
-EPISODES.bResourceTimingAgg = true;   // get aggregate Resource Timing stats (optional)
-EPISODES.mark("firstbyte");           // mark the first byte as high in the HEAD as possible.
-</script>
-<script async defer src="/js/episodes.js"></script>
+    <script async defer src="/js/episodes.js"></script>
+
+To exer
+    <script>
+    var EPISODES = EPISODES || {};
+    EPISODES.q = [];                      // command queue
+    EPISODES.mark = function(mn, mt) { EPISODES.q.push( ["mark", mn, mt || new Date().getTime()] ); };
+    EPISODES.measure = function(en, st, en) { EPISODES.q.push( ["measure", en, st, en || new Date().getTime()] ); };
+    </script>
+    <script async defer src="/js/episodes.js"></script>
+
 */
 
 
-// Don't overwrite pre-existing instances of the object (esp. for older browsers).
-var EPISODES = EPISODES || {};
-EPISODES.q = EPISODES.q || [];
-EPISODES.version = "0.3";
+var EPISODES = EPISODES || {};  // EPISODES namespace
+EPISODES.q = EPISODES.q || [];  // command queue
+
+EPISODES.setDefault = function(param, val) {
+    if ( "undefined" == typeof(EPISODES[param]) ) {
+            EPISODES[param] = val;
+    }
+
+    return EPISODES[param];
+};
+
+
+// OPTIONS
+EPISODES.setDefault("bSendBeacon", 0);         // 1 == beacon back the resulting metrics
+EPISODES.setDefault("beaconUrl", '/images/beacon.gif');  // URL to use for the metrics beacon
+EPISODES.setDefault("bResourceTimingAgg", 1);  // 1 == include Resource Timing aggregate stats.
+EPISODES.setDefault("autorun", 1);             // 1 == finish collecting metrics at window.onload
+
+// other settings
 EPISODES.targetOrigin = document.location.protocol + "//" + document.location.hostname;
 EPISODES.bPostMessage = ("undefined" != typeof(window.postMessage));
-
-// CUSTOMIZE THESE VARIABLES!!
-EPISODES.beaconUrl = EPISODES.beaconUrl || '/images/beacon.gif';
-EPISODES.autorun = ( "undefined" != typeof(EPISODES.autorun) ? EPISODES.autorun : true );
+EPISODES.version = "0.3";
 
 
 EPISODES.init = function() {
@@ -45,6 +58,7 @@ EPISODES.init = function() {
     EPISODES.marks = {};
     EPISODES.measures = {};
     EPISODES.starts = {};  // We need to save the starts so that given a measure we can say the epoch times that it began and ended.
+    EPISODES.hResourceTiming = undefined;
     EPISODES.findStartTime();
     EPISODES.addEventListener("beforeunload", EPISODES.beforeUnload, false);
 
@@ -187,7 +201,7 @@ EPISODES.done = function(callback) {
         EPISODES.measureResources();
     }
 
-    if ( EPISODES.autorun ) {
+    if ( EPISODES.bSendBeacon ) {
         EPISODES.sendBeacon();
     }
 
@@ -253,6 +267,17 @@ EPISODES.sendBeacon = function(url, params) {
                         sTimes += "&rt_" + escape(key) + "=" + hKey['num'] + "," + hKey['max'] + "," + hKey['med'] + "," + hKey['avg'];
                     }
                 }
+            }
+
+            if ( EPISODES.slowestEntry ) {
+                var hTimes = EPISODES.getResourceTiming(EPISODES.slowestEntry);
+                sTimes += "&slowest=" + encodeURIComponent(EPISODES.slowestEntry.name) + 
+                    "," + hTimes.dur +
+                    "," + ( hTimes.dns || "na" ) +
+                    "," + ( hTimes.tcp || "na" ) +
+                    "," + ( hTimes.ssl || "na" ) +
+                    "," + ( hTimes.ttfb || "na" );
+                    
             }
         }
 
@@ -369,36 +394,36 @@ EPISODES.measureResources = function() {
     }
 
     // Record timing metrics for each appropriate resource.
-	var aDns=[], aDnsNz=[], aSsl=[], aSslNz=[], aTcp=[], aTcpNz=[], aTtfb=[], aTtfbNz=[], aDur=[], aDurNz=[];  // store time measurements
+	var aDns=[], aDnsNz=[], aSsl=[], aSslNz=[], aTcp=[], aTcpNz=[], aTtfb=[], aTtfbNz=[], aDur=[], aDurNz=[];
     var aEntries = performance.getEntriesByType("resource");
-    var len = aEntries.length;
-    for ( var i = 0; i < len; i++ ) {
+    for ( var i = 0, len=aEntries.length, maxDur = 0; i < len; i++ ) {
         var entry = aEntries[i];
         if ( EPISODES.domainMatch(entry) ) {
-            var t = Math.round(entry.duration);
+            var hTimes = EPISODES.getResourceTiming(entry);
+            var t = hTimes.dur;
             aDur.push( t ); // we ALWAYS have a duration
-            if ( 0 < t ) { aDurNz.push( t ); }
+            if ( t ) { aDurNz.push( t ); }
+            if ( t > maxDur ) {
+                maxDur = t;
+                EPISODES.slowestEntry = entry;
+            }
 
-            // Make sure we have access to the cross-domain restricted properties.
-            if ( 0 != entry.requestStart ) {
-                t = Math.round(entry.domainLookupEnd - entry.domainLookupStart);
+            if ( t = hTimes.dns ) {
                 aDns.push( t );
-                if ( 0 < t ) { aDnsNz.push( t ); }
-
-                t = Math.round(entry.connectEnd - entry.connectStart);
+                if ( t ) { aDnsNz.push( t ); }
+            }
+            if ( t = hTimes.tcp ) {
                 aTcp.push( t );
                 if ( 0 < t ) { aTcpNz.push( t ); }
-
-                t = Math.round(entry.responseStart - entry.startTime);
+            }
+            if ( t = hTimes.ttfb ) {
+                t = hTimes.ttfb;
                 aTtfb.push( t );
                 if ( 0 < t ) { aTtfbNz.push( t ); }
-
-                if ( entry.secureConnectionStart ) {
-                    // secureConnectionStart can be "undefined" or "0"
-                    t = Math.round(entry.connectEnd - entry.secureConnectionStart);
-                    aSsl.push( t );
-                    if ( 0 < t ) { aSslNz.push( t ); }
-                }
+            }
+            if ( t = hTimes.ssl ) {
+                aSsl.push( t );
+                if ( 0 < t ) { aSslNz.push( t ); }
             }
 		}
     }
@@ -417,6 +442,25 @@ EPISODES.measureResources = function() {
 	EPISODES.aggStats(EPISODES.hResourceTiming, 'durnz', aDurNz);
 };
 
+
+// return a hash of calculated times
+EPISODES.getResourceTiming = function(entry) {
+    var hTimes = {};
+    hTimes.dur = Math.round(entry.duration);
+
+    // Make sure we have access to the cross-domain restricted properties.
+    if ( 0 != entry.requestStart ) {
+        hTimes.dns = Math.round(entry.domainLookupEnd - entry.domainLookupStart);
+        hTimes.tcp = Math.round(entry.connectEnd - entry.connectStart);
+        hTimes.ttfb = Math.round(entry.responseStart - entry.startTime);
+        if ( entry.secureConnectionStart ) {
+            // secureConnectionStart can be "undefined" or "0"
+            hTimes.ssl = Math.round(entry.connectEnd - entry.secureConnectionStart);
+        }
+    }
+
+    return hTimes;
+};
 
 // Return true if the resource entry's domain matches the domain we're supposed to measure.
 EPISODES.domainMatch = function(entry) {
