@@ -1,0 +1,1 @@
+JavaScript-based web page timing.
